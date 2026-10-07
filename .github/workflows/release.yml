@@ -1,0 +1,88 @@
+name: Release
+
+# Publishes a new GitHub release (and updates the Homebrew tap) only when a
+# merge to main changes CFBundleShortVersionString in Resources/Info.plist.
+# Routine merges that don't bump the version are a no-op here.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      released: ${{ steps.check.outputs.released }}
+      sha256: ${{ steps.build.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from Info.plist
+        id: version
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version was already released
+        id: check
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q .; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build dmg
+        if: steps.check.outputs.released == 'true'
+        id: build
+        run: |
+          ./scripts/build-dmg.sh
+          SHA256=$(shasum -a 256 dist/BedrockMeter.dmg | awk '{print $1}')
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and publish release
+        if: steps.check.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" dist/BedrockMeter.dmg \
+            --title "v$VERSION" \
+            --notes "Automated release for v$VERSION."
+
+  update-homebrew-tap:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # Requires a repo secret HOMEBREW_TAP_TOKEN: a personal access token
+      # with write access to mehaxan/homebrew-claude-quota-tracker, since the
+      # default GITHUB_TOKEN can't push to a different repository.
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: mehaxan/homebrew-claude-quota-tracker
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update cask
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          sed -i.bak -E "s/version \"[^\"]+\"/version \"$VERSION\"/" Casks/bedrock-meter.rb
+          sed -i.bak -E "s/sha256 \"[^\"]+\"/sha256 \"$SHA256\"/" Casks/bedrock-meter.rb
+          rm Casks/bedrock-meter.rb.bak
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/bedrock-meter.rb
+          git commit -m "Update bedrock-meter cask to v${{ needs.release.outputs.version }}"
+          git push

@@ -1,6 +1,6 @@
 import Cocoa
+import BedrockMeterCore
 
-let refreshInterval: TimeInterval = 15 * 60
 let processTimeout: TimeInterval = 20
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,12 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var binaryPath: String
     private var profile: String
+    private var refreshInterval: TimeInterval
     private let settingsWindowController = SettingsWindowController()
 
     override init() {
         let config = QuotaConfig.load()
         binaryPath = config.binaryPath
         profile = config.profile
+        refreshInterval = config.refreshInterval
         super.init()
     }
     private let timeFormatter: DateFormatter = {
@@ -68,6 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
 
         refresh()
+        scheduleTimer()
+    }
+
+    private func scheduleTimer() {
+        timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
@@ -82,16 +89,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
-        settingsWindowController.onSave = { [weak self] newBinaryPath, newProfile in
-            self?.applySettings(binaryPath: newBinaryPath, profile: newProfile)
+        settingsWindowController.onSave = { [weak self] newBinaryPath, newProfile, newRefreshInterval in
+            self?.applySettings(binaryPath: newBinaryPath, profile: newProfile, refreshInterval: newRefreshInterval)
         }
-        settingsWindowController.show(binaryPath: binaryPath, profile: profile)
+        settingsWindowController.show(binaryPath: binaryPath, profile: profile, refreshInterval: refreshInterval)
     }
 
-    private func applySettings(binaryPath: String, profile: String) {
-        self.binaryPath = binaryPath
+    private func applySettings(binaryPath: String, profile: String, refreshInterval: TimeInterval) {
+        self.binaryPath = NSString(string: binaryPath).expandingTildeInPath
         self.profile = profile
-        try? QuotaConfig.save(binaryPath: binaryPath, profile: profile)
+        self.refreshInterval = max(refreshInterval, QuotaConfig.minimumRefreshInterval)
+        try? QuotaConfig.save(binaryPath: self.binaryPath, profile: profile, refreshInterval: self.refreshInterval)
+        scheduleTimer()
         refresh()
     }
 

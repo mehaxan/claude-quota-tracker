@@ -2,12 +2,22 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeQuotaMenuBar",
+    name: "BedrockMeter",
     platforms: [.macOS(.v13)],
     targets: [
+        .target(
+            name: "BedrockMeterCore",
+            path: "Sources/BedrockMeterCore"
+        ),
         .executableTarget(
-            name: "ClaudeQuotaMenuBar",
-            path: "Sources/ClaudeQuotaMenuBar"
-        )
+            name: "BedrockMeter",
+            dependencies: ["BedrockMeterCore"],
+            path: "Sources/BedrockMeter"
+        ),
+        .testTarget(
+            name: "BedrockMeterCoreTests",
+            dependencies: ["BedrockMeterCore"],
+            path: "Tests/BedrockMeterCoreTests"
+        ),
     ]
 )

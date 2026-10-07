@@ -3,17 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>ClaudeQuotaMenuBar</string>
+    <string>BedrockMeter</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.hobby.claude-quota-menu-bar</string>
+    <string>dev.hobby.bedrock-meter</string>
     <key>CFBundleName</key>
-    <string>ClaudeQuotaMenuBar</string>
+    <string>BedrockMeter</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSUIElement</key>
     <true/>
     <key>LSMinimumSystemVersion</key>

@@ -1,17 +1,26 @@
 import Foundation
+import os
 
-struct QuotaResult {
-    let used: Double
-    let limit: Double
-    let percent: Double
+private let log = Logger(subsystem: "dev.hobby.bedrock-meter", category: "quota")
+
+public struct QuotaResult {
+    public let used: Double
+    public let limit: Double
+    public let percent: Double
+
+    public init(used: Double, limit: Double, percent: Double) {
+        self.used = used
+        self.limit = limit
+        self.percent = percent
+    }
 }
 
-enum QuotaError: Error {
+public enum QuotaError: Error {
     case launchFailed(String)
     case timeout
     case parseFailed(String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .launchFailed(let message):
             return "couldn't launch credential-process: \(message)"
@@ -29,7 +38,7 @@ private let quotaLineRegex = try! NSRegularExpression(
     pattern: #"Monthly:\s*\$([\d,]+\.\d+)\s*/\s*\$([\d,]+\.\d+)\s*\(([\d.]+)%\)"#
 )
 
-func parseQuota(_ output: String) -> QuotaResult? {
+public func parseQuota(_ output: String) -> QuotaResult? {
     let range = NSRange(output.startIndex..., in: output)
     guard let match = quotaLineRegex.firstMatch(in: output, range: range) else { return nil }
 
@@ -48,8 +57,9 @@ func parseQuota(_ output: String) -> QuotaResult? {
 /// Runs `credential-process --profile <profile> --show-quota` and parses its text output.
 /// Suppresses the tool's own browser notification (CCWB_NO_BROWSER_NOTIFICATION) since this
 /// runs unattended on a timer and should never pop a browser window.
-func fetchQuota(binaryPath: String, profile: String, timeout: TimeInterval) -> Result<QuotaResult, QuotaError> {
+public func fetchQuota(binaryPath: String, profile: String, timeout: TimeInterval) -> Result<QuotaResult, QuotaError> {
     guard FileManager.default.isExecutableFile(atPath: binaryPath) else {
+        log.error("configured credential-process binary is not executable: \(binaryPath, privacy: .public)")
         return .failure(.launchFailed("no executable at \(binaryPath)"))
     }
 
@@ -70,6 +80,7 @@ func fetchQuota(binaryPath: String, profile: String, timeout: TimeInterval) -> R
     do {
         try process.run()
     } catch {
+        log.error("failed to launch credential-process: \(error.localizedDescription, privacy: .public)")
         return .failure(.launchFailed(error.localizedDescription))
     }
 
@@ -83,11 +94,13 @@ func fetchQuota(binaryPath: String, profile: String, timeout: TimeInterval) -> R
 
     if readGroup.wait(timeout: .now() + timeout) == .timedOut {
         process.terminate()
+        log.error("credential-process timed out after \(timeout) seconds")
         return .failure(.timeout)
     }
 
     let output = String(data: outputData, encoding: .utf8) ?? ""
     guard let result = parseQuota(output) else {
+        log.error("couldn't parse credential-process output")
         return .failure(.parseFailed(output))
     }
     return .success(result)
