@@ -37,6 +37,13 @@ These can also be set via environment variables (`CLAUDE_QUOTA_BINARY`,
 `CLAUDE_QUOTA_PROFILE`, `CLAUDE_QUOTA_REFRESH_INTERVAL` in seconds), which take
 precedence over the Settings window.
 
+## Updating
+
+BedrockMeter checks the GitHub releases page for a newer version shortly
+after launch and once a day after that. If an update is available, or if you
+pick **Check for Updates…** from the menu bar icon yourself, it offers to
+download and install it in place, then relaunch.
+
 ## Development
 
 ```sh

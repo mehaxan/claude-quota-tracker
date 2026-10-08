@@ -2,6 +2,7 @@ import Cocoa
 import BedrockMeterCore
 
 let processTimeout: TimeInterval = 20
+let updateCheckInterval: TimeInterval = 24 * 60 * 60
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -9,11 +10,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quotaDetailView: QuotaDetailView!
     private var errorMenuItem: NSMenuItem!
     private var updatedMenuItem: NSMenuItem!
+    private var checkForUpdatesMenuItem: NSMenuItem!
     private var timer: Timer?
+    private var updateCheckTimer: Timer?
     private var binaryPath: String
     private var profile: String
     private var refreshInterval: TimeInterval
     private let settingsWindowController = SettingsWindowController()
+    private let updateInstaller = UpdateInstaller()
+    private var isCheckingForUpdates = false
+
+    private var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
 
     override init() {
         let config = QuotaConfig.load()
@@ -61,6 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        checkForUpdatesMenuItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdatesClicked), keyEquivalent: "")
+        checkForUpdatesMenuItem.target = self
+        menu.addItem(checkForUpdatesMenuItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
@@ -71,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         refresh()
         scheduleTimer()
+        scheduleUpdateChecks()
     }
 
     private func scheduleTimer() {
@@ -86,6 +100,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    private func scheduleUpdateChecks() {
+        // Give the UI a moment to settle before the first background check.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self?.checkForUpdates(userInitiated: false)
+        }
+        updateCheckTimer?.invalidate()
+        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: updateCheckInterval, repeats: true) { [weak self] _ in
+            self?.checkForUpdates(userInitiated: false)
+        }
+    }
+
+    @objc private func checkForUpdatesClicked() {
+        checkForUpdates(userInitiated: true)
+    }
+
+    private func checkForUpdates(userInitiated: Bool) {
+        guard !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
+        if userInitiated {
+            checkForUpdatesMenuItem.title = "Checking for Updates…"
+            checkForUpdatesMenuItem.isEnabled = false
+        }
+
+        Updater.checkForUpdate(currentVersion: currentVersion) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isCheckingForUpdates = false
+                self.checkForUpdatesMenuItem.title = "Check for Updates…"
+                self.checkForUpdatesMenuItem.isEnabled = true
+
+                switch result {
+                case .success(let update):
+                    if let update = update {
+                        self.promptToInstall(update)
+                    } else if userInitiated {
+                        self.showAlert(title: "You're Up to Date", message: "BedrockMeter \(self.currentVersion) is the latest version.")
+                    }
+                case .failure(let error):
+                    if userInitiated {
+                        self.showAlert(title: "Update Check Failed", message: error.description)
+                    }
+                }
+            }
+        }
+    }
+
+    private func promptToInstall(_ update: UpdateInfo) {
+        let alert = NSAlert()
+        alert.messageText = "Update Available"
+        alert.informativeText = "BedrockMeter \(update.version) is available. You're on \(currentVersion). Download and install it now?"
+        alert.addButton(withTitle: "Install Update")
+        alert.addButton(withTitle: "Later")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        installUpdate(update)
+    }
+
+    private func installUpdate(_ update: UpdateInfo) {
+        statusItem.button?.title = "⬇️"
+        updateInstaller.install(from: update.downloadURL) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch result {
+                case .success:
+                    let alert = NSAlert()
+                    alert.messageText = "Update Installed"
+                    alert.informativeText = "BedrockMeter \(update.version) has been installed. Relaunch now to finish updating?"
+                    alert.addButton(withTitle: "Relaunch Now")
+                    alert.addButton(withTitle: "Later")
+                    NSApp.activate(ignoringOtherApps: true)
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        self.updateInstaller.relaunch()
+                        return
+                    }
+                case .failure(let error):
+                    let message = (error as? UpdateInstaller.InstallError)?.description ?? error.localizedDescription
+                    self.showAlert(title: "Update Failed", message: message)
+                }
+                self.refresh()
+            }
+        }
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func openSettings() {
