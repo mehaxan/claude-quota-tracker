@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import BedrockMeterCore
 
@@ -45,5 +46,35 @@ struct QuotaTests {
         default:
             Issue.record("expected launchFailed for a missing binary, got \(result)")
         }
+    }
+
+    private static var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    private static func date(year: Int, month: Int, day: Int) -> Date {
+        utcCalendar.date(from: DateComponents(year: year, month: month, day: day))!
+    }
+
+    @Test func projectUsageUnderBudgetHasNoLimitDate() {
+        // Day 10 of a 31-day month, spending $10/day: on pace for $310, nowhere near $1,100.
+        let projection = projectUsage(used: 100, limit: 1100, asOf: Self.date(year: 2024, month: 1, day: 10), calendar: Self.utcCalendar)
+        #expect(projection.projectedLimitDate == nil)
+        #expect(abs(projection.projectedMonthTotal - 310) < 0.01)
+    }
+
+    @Test func projectUsageOverBudgetProjectsLimitDate() {
+        // Day 10 of a 31-day month, spending $40/day: hits $1,100 on day 28.
+        let projection = projectUsage(used: 400, limit: 1100, asOf: Self.date(year: 2024, month: 1, day: 10), calendar: Self.utcCalendar)
+        #expect(projection.projectedLimitDate == Self.date(year: 2024, month: 1, day: 28))
+        #expect(abs(projection.projectedMonthTotal - 1240) < 0.01)
+    }
+
+    @Test func projectUsageWithNoSpendYet() {
+        let projection = projectUsage(used: 0, limit: 1100, asOf: Self.date(year: 2024, month: 1, day: 1), calendar: Self.utcCalendar)
+        #expect(projection.projectedLimitDate == nil)
+        #expect(projection.projectedMonthTotal == 0)
     }
 }

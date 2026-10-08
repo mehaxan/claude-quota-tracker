@@ -15,6 +15,42 @@ public struct QuotaResult {
     }
 }
 
+/// A linear extrapolation of this month's usage, assuming the daily spend rate
+/// observed so far (used / days elapsed) holds for the rest of the month.
+public struct UsageProjection: Equatable {
+    public let projectedMonthTotal: Double
+    public let projectedLimitDate: Date?
+
+    public init(projectedMonthTotal: Double, projectedLimitDate: Date?) {
+        self.projectedMonthTotal = projectedMonthTotal
+        self.projectedLimitDate = projectedLimitDate
+    }
+}
+
+/// Projects month-end usage and, if the current daily rate would exceed `limit`
+/// before the month ends, the date that's expected to happen. There's no
+/// persisted usage history to work from, so this is a same-month linear
+/// extrapolation from the single `used` data point rather than a real trend.
+public func projectUsage(used: Double, limit: Double, asOf date: Date = Date(), calendar: Calendar = Calendar(identifier: .gregorian)) -> UsageProjection {
+    let dayOfMonth = calendar.component(.day, from: date)
+    let daysInMonth = calendar.range(of: .day, in: .month, for: date)?.count ?? 30
+    let fractionElapsed = Double(dayOfMonth) / Double(daysInMonth)
+    let projectedMonthTotal = fractionElapsed > 0 ? used / fractionElapsed : used
+
+    var projectedLimitDate: Date?
+    let dailyRate = used / Double(dayOfMonth)
+    if dailyRate > 0, limit > 0 {
+        let daysToLimit = limit / dailyRate
+        if daysToLimit <= Double(daysInMonth) {
+            let projectedDay = min(max(dayOfMonth, Int(daysToLimit.rounded(.up))), daysInMonth)
+            var components = calendar.dateComponents([.year, .month], from: date)
+            components.day = projectedDay
+            projectedLimitDate = calendar.date(from: components)
+        }
+    }
+    return UsageProjection(projectedMonthTotal: projectedMonthTotal, projectedLimitDate: projectedLimitDate)
+}
+
 public enum QuotaError: Error {
     case launchFailed(String)
     case timeout

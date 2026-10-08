@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var progressMenuItem: NSMenuItem!
     private var quotaDetailView: QuotaDetailView!
     private var errorMenuItem: NSMenuItem!
+    private var errorDetailView: ErrorDetailView!
     private var updatedMenuItem: NSMenuItem!
     private var checkForUpdatesMenuItem: NSMenuItem!
     private var timer: Timer?
@@ -52,8 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         progressMenuItem.isHidden = true
         menu.addItem(progressMenuItem)
 
-        errorMenuItem = NSMenuItem(title: "Checking usage…", action: nil, keyEquivalent: "")
-        errorMenuItem.isEnabled = false
+        errorDetailView = ErrorDetailView()
+        errorDetailView.update(message: "Checking usage…", isError: false)
+        errorMenuItem = NSMenuItem()
+        errorMenuItem.view = errorDetailView
         menu.addItem(errorMenuItem)
 
         updatedMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -236,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .failure(let error):
             statusItem.button?.image = nil
             statusItem.button?.title = "⚠️"
-            errorMenuItem.title = error.description
+            errorDetailView.update(message: error.description)
             errorMenuItem.isHidden = false
             progressMenuItem.isHidden = true
             updatedMenuItem.title = "Last attempt \(timeFormatter.string(from: Date()))"
